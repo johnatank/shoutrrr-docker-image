@@ -1,0 +1,57 @@
+version: "1.0"
+stages:
+  - precheck
+  - clone
+  - build
+steps:
+  checkShoutrrrLatestVersion:
+    title: Check latest shoutrrr version
+    type: freestyle
+    stage: precheck
+    arguments:
+      image: alpine:latest
+      commands:
+        - apk add jq curl
+        - export SHOUTRRR_VERSION=$(curl
+          https://api.github.com/repos/containrrr/shoutrrr/releases/latest | jq -r .name | tr -d v)
+        - cf_export SHOUTRRR_VERSION
+        
+  checkIfDockerImageExists:
+    title: Check if my docker repo has image
+    stage: precheck
+    fail_fast: false
+    arguments:
+      image: mprokopi/shoutrrr:${{SHOUTRRR_VERSION}}
+      commands:
+        - shoutrrr -v      
+        
+  cloneRepo:
+    title: "Cloning repository"
+    type: "git-clone"
+    repo: "johnatank/shoutrrr-docker-image"
+    revision: main
+    git: "github"
+    stage: "clone"
+    when:
+      condition:
+        all:
+          checkIfDockerImageExistsFailure: steps.checkIfDockerImageExists.result == 'failure'
+          
+  dockerImageBuild:
+    type: build
+    title: Building docker image
+    stage: build
+    arguments:
+      build_arguments:
+      - SHOUTRRR_VERSION=${{SHOUTRRR_VERSION}}
+      working_directory: '${{cloneRepo}}'
+      dockerfile: Dockerfile
+      image_name: mprokopi/shoutrrr
+      tag: '${{SHOUTRRR_VERSION}}'
+      tags:
+        - latest
+      registry: my-docker-hub
+    when:
+      condition:
+        all:
+          checkIfDockerImageExistsFailure: steps.checkIfDockerImageExists.result == 'failure'
