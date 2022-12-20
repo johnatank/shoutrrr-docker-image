@@ -3,6 +3,7 @@ stages:
   - precheck
   - clone
   - build
+  - notify
 steps:
   checkShoutrrrLatestVersion:
     title: Check latest shoutrrr version
@@ -24,7 +25,17 @@ steps:
       image: mprokopi/shoutrrr:${{SHOUTRRR_VERSION}}
       commands:
         - shoutrrr -v      
-        
+    hooks:
+      on_success:
+        exec:
+          image: docker.io/mprokopi/shoutrrr:latest
+          environment:
+            - TITLE=Codefresh CD - ${{CF_PIPELINE_NAME}}
+          commands:
+            - |-
+              shoutrrr send --url "telegram://$TG_NOTIFICATION_TOKEN@telegram?chats=$TG_CHAT_ID&preview=No&ParseMode=HTML&Title=$TITLE" --message \
+              "✅ Новий образ <b>shoutrrr</b> не потрібен."
+              
   cloneRepo:
     title: "Cloning repository"
     type: "git-clone"
@@ -55,3 +66,32 @@ steps:
       condition:
         all:
           checkIfDockerImageExistsFailure: steps.checkIfDockerImageExists.result == 'failure'
+    hooks:
+      on_fail:
+        exec:
+          image: docker.io/mprokopi/shoutrrr:latest
+          environment:
+            - TITLE=Codefresh CD - ${{CF_PIPELINE_NAME}}
+          commands:
+            - |-
+              shoutrrr send --url "telegram://$TG_NOTIFICATION_TOKEN@telegram?chats=$TG_CHAT_ID&preview=No&ParseMode=HTML&Title=$TITLE" --message \
+              "❗️Упс. Сталася помилка при збірці образу <b>shoutrrr</b>. 
+              Переглянути статус збірки можна за <a href=\"${{CF_BUILD_URL}}\">посиланням</a>."
+      
+  notifyOnSuccess:
+    title: Notify on success of pipeline
+    type: freestyle
+    stage: notify
+    arguments:
+      image: docker.io/mprokopi/shoutrrr:latest
+      environment:
+        - TITLE=Codefresh CD - ${{CF_PIPELINE_NAME}}
+      commands:
+        - |-
+          shoutrrr send --url "telegram://$TG_NOTIFICATION_TOKEN@telegram?chats=$TG_CHAT_ID&preview=No&ParseMode=HTML&Title=$TITLE" --message \
+          "✅ Збірка образу <b>shoutrrr</b> завершена.  
+          Переглянути статус збірки можна за <a href=\"${{CF_BUILD_URL}}\">посиланням</a>."
+    when:
+      condition:
+        all:
+          dockerImageBuildStatus: steps.dockerImageBuild.result == 'success'
